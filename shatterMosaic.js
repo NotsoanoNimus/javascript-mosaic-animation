@@ -20,6 +20,9 @@ var delayBeforeShatterMs = 2250;
 var windEnabled = true;
 var delayBeforeWindMs = 4000;
 var windDirection = 'right';
+var windySoundEffect = true; var windySoundFile = 'desertwinds.mp3'
+var windyParticleEffect = true;
+var windyParticleColor = "#aa6600";
 
 // GLOBAL PARAMETERS (do not modify).
 // Which element to insert the animation into, in the parent HTML window.
@@ -113,6 +116,7 @@ function initialSetup() {
             </image>
         `, id:objectId, svgObj:svg[objectId], spline:splines, dur:duration,
             toPos:goToPosition, fromPos:from });
+            // begin="${((loadedTime - window.performance.timing.loadEventEnd)/1000).toString()}s"
     }
 
     // Set the inner content of the SVG.
@@ -121,16 +125,16 @@ function initialSetup() {
     if(constructOnly !== true) {
         if(shatterEnabled === true) {
             window.setTimeout( ()=>{ shatterMosaicPieces(); },
-                (maxDuration*1000) + delayBeforeShatterMs);
+                (maxDuration*1000) + 250 + delayBeforeShatterMs);
         } else if(windEnabled === true) {
             window.setTimeout( ()=>{ windyMosaicPieces(); },
-                (maxDuration*1000) + delayBeforeWindMs);
+                (maxDuration*1000) + 250 + delayBeforeWindMs);
         }
     }
 }
 
 // Called shortly after the mosaic is constructed.
-//   Shatter the pieces again, and "blow them in the wind" to the right edge of the screen, if enabled.
+//   I originally conceived this as a center-focused "shattering" of the mosaic. But it doesn't work atm.
 function shatterMosaicPieces() {
     let newRenderedSVG = [];
     // The shatter duration is always EVEN across the whole animation (pieces don't split at different rates)
@@ -203,6 +207,39 @@ function windyMosaicPieces() {
     // Set the global variable to the new SVG content, and pass the new content to the renderer.
     renderedSVG = newRenderedSVG;
     redrawSvg(newRenderedSVG.map((i)=>{return i.text;}));
+    // Create the dust/particle effect, if enabled.
+    if(windySoundEffect === true) { createWindySounds(); }
+    if(windyParticleEffect === true) { addWindyParticleEffect(); }
+}
+// Enables playing a specified background soundtrack, which will only work if the user first interacts
+//   with the page somehow.
+function createWindySounds() {
+    let newAudio = document.createElement('audio');
+    newAudio.autoplay = true; newAudio.controls = true;
+    newAudio.muted = false; newAudio.loop = true;
+    newAudio.volume = 0.2; newAudio.id = 'windy-sound-effect';
+    newAudio.style.display = 'none';
+    let audioSrc = document.createElement('source');
+    audioSrc.src = `${windySoundFile}`;
+    newAudio.appendChild(audioSrc);
+    newAudio.addEventListener("onplay", async (evnt) => {
+        function sleep(ms) {return new Promise(resolve => setTimeout(resolve, ms));}
+        let y=document.getElementById('windy-sound-effect'); y.play(); y.muted=false;
+        for(let i=0.2;i<1.0;i+=0.02){y.volume=i;await sleep(30);}
+        evnt.target.removeEventListener("onplay");
+    }); //audio fade-in effect
+    // Add the element onto the document and use a really cheap tactic to start auto-play.
+    //   In order for this to work, you have to bait the visitor to click the document at least once,
+    //   or interact some other way. I did some by gating my site with an "enter" button.
+    document.getElementsByTagName('body')[0].appendChild(newAudio);
+    window.addEventListener("mousemove", (evnt) => {
+        let audio = document.getElementById('windy-sound-effect');
+        audio.play();
+    });
+}
+// Self-propagating loop to add particles in the same (general) direction as the mosaic wind.
+function addWindyParticleEffect() {
+    let baseSVG = null;
 }
 
 
@@ -216,14 +253,17 @@ function redrawSvg(innerContent) {
             ${innerContent}
         </svg>
     `;
+    //// Reference to an external method that's called on window resize events
+    if(typeof resizeFunc === "function") { resizeFunc(); }
 }
 
 
 
 
-
 // Start "main".
-//// Register the onResize event for the window.
+//// Get the exact time the script was loaded.
+var loadedTime = (new Date()).getTime();
+// alert("BEGIN: " + ((loadedTime - window.performance.timing.loadEventEnd)/1000).toString()+"s");
 //// Set up the SVG properties.
 initialSetup();
 //// Initial rendering.

@@ -7,6 +7,17 @@ const SVGData =
 const ORIGINAL_HEIGHT = 600, ORIGINAL_WIDTH = 800;
 // Duration range in seconds for all initial splines to complete (where the mosaic comes together).
 const introDurationRange = [2, 6];
+// Primary mosaic configuration object.
+const mosaic = {
+    shardDurationRange: [2, 6],
+    originalDimensions: {
+        height: 600, width: 800
+    },
+    maxHeight: '800px',
+    aspectRatioType: 'xMidYMid meet',
+    svgId: 'mosaic-svg-rendering',
+    wrapperId: 'mosaic-svg-container'
+};
 // Winds configuration object.
 const winds = {
     enabled: true,
@@ -20,14 +31,14 @@ const winds = {
     particles: {
         enabled: true,
         svgId: 'windy-particle-svg',
+        wrapperId: 'windy-particle-svg-wrapper',
         density: [140, 220],
+        durationRange: [1.4, 5.5],
         colors: ["#aa6600", "#fb0", "#620"]
     }
 };
 
 // GLOBAL PARAMETERS (do not modify).
-// Which element to insert the animation into, in the parent HTML window.
-var targetInsertElement = "mosaic-svg-container";
 // The content inside of the SVG tag.
 var renderedSVG = [];
 // Whether the introductory construction animation has completed.
@@ -62,6 +73,58 @@ function applyProperties(objRef,newProps) {
             objRef[property] = newProps[property];
         } catch { console.log(`Invalid property: ${property} //// Element: ` + objRef); }
     })
+}
+// Get a new mosaic shard trajectory based on the provided FROM array [Xstart, Ystart].
+function getBlowingShardTrajectory(fromPos) {
+    let goTo;
+    switch(winds.direction) {
+        case 'down':
+            goTo = `${fromPos[0]} ${Math.max(1000, window.innerHeight+getRand(50,150)).toString()}`;
+            break;
+        case 'up':
+            goTo = `${fromPos[0]} ${getRand(-window.innerHeight,-(window.innerHeight/2)).toString()}`;
+            break;
+        case 'left':
+            goTo = `${getRand(-window.innerWidth,-(window.innerWidth/2)).toString()} ${fromPos[1]}`;
+            break;
+        case 'right':
+        default:
+            goTo = `${Math.max(1000, window.innerWidth+getRand(50,150)).toString()} ${fromPos[1]}`;
+            break;
+    }
+    return goTo;
+}
+// Get new wind particle positions based on the current viewport.
+function getBlowingParticleTrajectory() {
+    let newFromX, newToX, newFromY, newToY;
+    switch(winds.direction) {
+        case'down':
+            newFromX = getRand(-20, window.innerWidth+20);
+            newToX = newFromX + getRand(-50, 50);
+            newFromY = getRand(-100, -20);
+            newToY = window.innerHeight + getRand(20, 80);
+            break;
+        case 'up':
+            newFromX = getRand(-20, window.innerWidth+20);
+            newToX = newFromX + getRand(-50, 50);
+            newFromY = window.innerHeight + getRand(20, 80);
+            newToY = getRand(-100, -20);
+            break;
+        case 'left':
+            newFromX = window.innerWidth + getRand(20, 80);
+            newToX = getRand(-100, -20);
+            newFromY = getRand(-20, window.innerHeight+20);
+            newToY = newFromY + getRand(-50, 50);
+            break;
+        case 'right':
+        default:
+            newFromX = getRand(-100, -20);
+            newToX = window.innerWidth + getRand(20, 80);
+            newFromY = getRand(-20, window.innerHeight+20);
+            newToY = newFromY + getRand(-50, 50);
+            break;
+    }
+    return new Array(`${newFromX} ${newFromY}`, `${newToX} ${newToY}`);
 }
 //////////////////////
 
@@ -113,7 +176,7 @@ function initialSetup() {
         // Set some parameters for the SVG element.
         let goToPosition = `${destX.toString()} ${destY.toString()}`,
             from = `${fromX.toString()} ${fromY.toString()}`,
-            duration = getRand(introDurationRange[0], introDurationRange[1]);
+            duration = getRand(mosaic.shardDurationRange[0], mosaic.shardDurationRange[1]);
         let splines = 
             `${Math.random().toString()}, ${Math.random().toString()}, ` +
             `${Math.random().toString()}, ${Math.random().toString()}`;
@@ -122,7 +185,20 @@ function initialSetup() {
         if(duration > localMaxDuration) { localMaxDuration = duration; }
 
         // Finally, append the SVG data onto the innerSVG pool.
-        innerSVG.push({text: `
+        let img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        img.id = objectId;
+        applyAttributes(img, { width:svg[objectId].width, height:svg[objectId].height, key:`${objectId}-image` });
+        img.setAttribute('xlink:href', `${svg[objectId].href}`);
+        let xform = document.createElementNS(null, 'animateTransform');
+        xform.id = `${objectId}-transform`;
+        applyAttributes(xform, {
+            type:'translate', height:svg[objectId].height, width:svg[objectId].width, 'from':`${from}`,
+            key:`${objectId}-animate`, to:goToPosition, dur:`${duration.toString()}s`, repeatCount:'1',
+            fill:'freeze', begin:'0s', calcMode:'spline', keySplines:splines, keyTimes:'0; 1', restart:'always',
+            attributeType:'XML', attributeName:'transform'
+        });
+        img.appendChild(xform);
+        innerSVG.push({element: img, text: `
             <image xlink:href="${svg[objectId].href}" key="${objectId}-image"
              width="${svg[objectId].width}" height="${svg[objectId].height}" id="${objectId}">
                 <animateTransform type="translate" from="${from}" key="${objectId}-animate"
@@ -135,8 +211,9 @@ function initialSetup() {
             // begin="${((loadedTime - window.performance.timing.loadEventEnd)/1000).toString()}s"
     }
 
-    // Set the inner content of the SVG.
+    // Set the inner content of the SVG and render.
     renderedSVG = innerSVG;
+    redrawSvg(renderedSVG.map((i)=>{return i.element;}));
     // Mark the intro as completed after the max time delay.
     window.setTimeout(()=>{introComplete=true;},(localMaxDuration*1000)+250);
     // Set winds, if enabled.
@@ -212,63 +289,10 @@ function createWindySounds() {
 }
 
 
-// Get a new mosaic shard trajectory based on the provided FROM array [Xstart, Ystart].
-function getBlowingShardTrajectory(fromPos) {
-    let goTo;
-    switch(winds.direction) {
-        case 'down':
-            goTo = `${fromPos[0]} ${Math.max(1000, window.innerHeight+getRand(50,150)).toString()}`;
-            break;
-        case 'up':
-            goTo = `${fromPos[0]} ${getRand(-window.innerHeight,-(window.innerHeight/2)).toString()}`;
-            break;
-        case 'left':
-            goTo = `${getRand(-window.innerWidth,-(window.innerWidth/2)).toString()} ${fromPos[1]}`;
-            break;
-        case 'right':
-        default:
-            goTo = `${Math.max(1000, window.innerWidth+getRand(50,150)).toString()} ${fromPos[1]}`;
-            break;
-    }
-    return goTo;
-}
-// Get new wind particle positions based on the current viewport.
-function getBlowingParticleTrajectory() {
-    let newFromX, newToX, newFromY, newToY;
-    switch(winds.direction) {
-        case'down':
-            newFromX = getRand(-20, window.innerWidth+20);
-            newToX = newFromX + getRand(-50, 50);
-            newFromY = getRand(-100, -20);
-            newToY = window.innerHeight + getRand(20, 80);
-            break;
-        case 'up':
-            newFromX = getRand(-20, window.innerWidth+20);
-            newToX = newFromX + getRand(-50, 50);
-            newFromY = window.innerHeight + getRand(20, 80);
-            newToY = getRand(-100, -20);
-            break;
-        case 'left':
-            newFromX = window.innerWidth + getRand(20, 80);
-            newToX = getRand(-100, -20);
-            newFromY = getRand(-20, window.innerHeight+20);
-            newToY = newFromY + getRand(-50, 50);
-            break;
-        case 'right':
-        default:
-            newFromX = getRand(-100, -20);
-            newToX = window.innerWidth + getRand(20, 80);
-            newFromY = getRand(-20, window.innerHeight+20);
-            newToY = newFromY + getRand(-50, 50);
-            break;
-    }
-    return new Array(`${newFromX} ${newFromY}`, `${newToX} ${newToY}`);
-}
 // Loop to add particles in the same (general) direction as the mosaic wind.
 function doWindyParticleEffect() {
     // Construct the wrapper div as well as the target SVG, and apply some attributes to each.
-    let baseDIV = document.createElement('div');
-    baseDIV.id = 'windy-particle-svg-wrapper';
+    let baseDIV = document.createElement('div'); baseDIV.id = winds.particles.wrapperId;
     applyStyles(baseDIV, {position:'fixed',top:'0',left:'0',zIndex:'-1001',width:'100%',height:'100%'});
     let baseSVG = document.createElement('svg');
     baseSVG.id = winds.particles.svgId;
@@ -282,7 +306,7 @@ function doWindyParticleEffect() {
     for(let x = 0; x < Math.floor(getRand(winds.particles.density[0], winds.particles.density[1])); x++) {
         // Get some new parameters.
         let newPositions = getBlowingParticleTrajectory();
-        let dur = getRand(introDurationRange[0], introDurationRange[1]) - Math.floor(getRand(0,0.550));
+        let dur = getRand(winds.particles.durationRange[0], winds.particles.durationRange[1]);
         // Spawn the particle and its transform element, then apply their respective attributes.
         let newParticle = document.createElement('circle');
         let newTransform = document.createElementNS(null, 'animateTransform');
@@ -314,11 +338,40 @@ function doWindyParticleEffect() {
 
 // Used to redraw the SVG whenever new content is going to be provided.
 function redrawSvg(innerContent) {
-    document.getElementById(targetInsertElement).innerHTML = `
+    if(!(innerContent instanceof Array)) { return; }
+    // Remove the wrapper (and all child content).
+    document.getElementById(mosaic.wrapperId).childNodes.forEach(
+        node => document.getElementById(node.id).remove()
+    );
+    // Recreate the mosaic SVG in its current state.
+    let newRender = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    newRender.id = mosaic.svgId;
+    applyAttributes(newRender, {
+        viewBox: `0 0 ${mosaic.originalDimensions.width} ${mosaic.originalDimensions.height}`,
+        preserveAspectRatio: mosaic.aspectRatioType
+    });
+    applyStyles(newRender, {
+        margin: '0 auto', padding: '0', display: 'block',
+        width: '100%', height: '100%', maxHeight: mosaic.maxHeight
+    });
+    newRender.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    newRender.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    innerContent.forEach(element => newRender.appendChild(element));
+    // newRender.innerHTML = innerContent;
+    // Create the wrapper again and append the SVG with all child contents.
+    document.getElementById(mosaic.wrapperId).appendChild(newRender);
+    // Forcibly update the DOM (or attempt to, at least).
+    document.getElementById(newRender.id).innerHTML += ' ';
+    //// Reference to an external method that's called on window resize events.
+    if(typeof resizeFunc === "function") { resizeFunc(); }
+
+
+    return;
+    document.getElementById(mosaic.wrapperId).innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-         viewBox="0 0 ${CANVAS_WIDTH.toString()} ${CANVAS_HEIGHT.toString()}" id="mosaic-svg-rendering"
+         viewBox="0 0 ${CANVAS_WIDTH.toString()} ${CANVAS_HEIGHT.toString()}" id="${mosaic.svgId}"
          style="margin:0 auto;padding:0;display:block;width:100%;height:100%;max-height:800px;"
-         preserveAspectRatio="xMidYMid meet" title="Shatter mosaic art.">
+         preserveAspectRatio="xMidYMid meet">
             ${innerContent}
         </svg>
     `;
@@ -336,12 +389,9 @@ function redrawSvg(innerContent) {
 //// Get the exact time the script was loaded.
 var loadedTime = (new Date()).getTime();
 
-//// Set up the SVG properties.
+//// Set up the SVG properties and load the initial rendering.
 console.log("Loading SVG...");
 initialSetup();
-
-//// Initial rendering.
-redrawSvg(renderedSVG.map((i)=>{return i.text;}));
 
 //// Register the script-wide resize handler.
 var globalResizeTimeoutId;
@@ -359,7 +409,7 @@ window.addEventListener('resize', () => {
         let t = document.getElementsByTagName('animateTransform');
         for(let x = 0; x < t.length; x++) {
             if(winds.enabled === true && introComplete === true
-              && t[x].parentElement.parentElement.id === 'mosaic-svg-rendering') {
+              && t[x].parentElement.parentElement.id === mosaic.svgId) {
                 // Render a new 'to' position based on the element's 'from' position and the wind direction.
                 t[x].setAttributeNS(null, 'to',
                     getBlowingShardTrajectory(t[x].getAttribute('from').split(' ')));

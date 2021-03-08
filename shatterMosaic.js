@@ -356,6 +356,12 @@ var globalResizeTimeoutId;
 window.addEventListener('resize', () => {
     window.clearTimeout(globalResizeTimeoutId);
     globalResizeTimeoutId = window.setTimeout(() => {
+        // Resize the SVG viewports.
+        let windyParticleSVG = document.getElementById('windy-particle-svg');
+        if(windyParticleSVG !== null) {
+            windyParticleSVG.setAttributeNS(null, 'viewBox',
+                `0 0 ${window.innerWidth} ${window.innerHeight}`);
+        }
         // Use the globally-set variable to re-render the current SVG contents.
         let t = document.getElementsByTagName('animateTransform');
         for(let x = 0; x < t.length; x++) {

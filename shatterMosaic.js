@@ -3,7 +3,7 @@ const SVGData =
 
 // Primary mosaic configuration object.
 const mosaic = {
-    shardDurationRange: [2, 6],
+    shardDurationRange: [4.0, 10.0],
     originalDimensions: {
         height: 600, width: 800
     },
@@ -16,6 +16,7 @@ const mosaic = {
 const winds = {
     enabled: true,
     delayBeforeStart: 2200,
+    durationRange: [2.5, 8.0],
     direction: 'left',
     sounds: {
         enabled: true,
@@ -220,10 +221,13 @@ function windyMosaicPieces() {
     currentlyRenderedSVGChildren.map((obj, index) => {
         // The destination location is based off of the at-rest (final) location of the previous SVG rendering.
         let goTo = getBlowingShardTrajectory(obj.toPos.split(' '));
+        // Get a new duration, since windy time is separate from the intro duration.
+        let dur = getRand(winds.durationRange[0], winds.durationRange[1]);
         //let goTo = `${Math.max(1000, window.innerWidth+getRand(50,150)).toString()} ${goFrom[1]}`;
         let newObject = JSON.parse(JSON.stringify(obj)); //clone & propagate the same properties but change a few
         newObject.fromPos = obj.toPos; //starts from previous resting point
         newObject.toPos = goTo; //goes to the new plotted location (see helper function)
+        newObject.dur = dur;
         // Create the outer IMAGE tag.
         let img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
         img.id = `${obj.id}-windy`;
@@ -234,7 +238,7 @@ function windyMosaicPieces() {
         xform.id = `${obj.id}-windy-transform`;
         applyAttributes(xform, {
             type:'translate', height:obj.svgObj.height, width:obj.svgObj.width, 'from':`${obj.toPos}`,
-            key:`${obj.id}-windy-animate`, to:goTo, dur:`${obj.dur.toString()}s`, repeatCount:'indefinite',
+            key:`${obj.id}-windy-animate`, to:goTo, dur:`${dur.toString()}s`, repeatCount:'indefinite',
             begin:'0s', calcMode:'spline', keySplines:'0.995, 0, 0.9125, 0',
             keyTimes:'0; 1', restart:'always', attributeType:'XML', attributeName:'transform'
         });

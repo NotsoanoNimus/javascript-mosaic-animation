@@ -198,7 +198,7 @@ function windyMosaicPieces() {
         originalPoints[index] = from;
         let goFrom = from.split(' ');
         // The destination of the keyframe/spline is on the same Y-coordinate but sent all the way right on X.
-        let goTo = `${(CANVAS_WIDTH + getRand(100,200)).toString()} ${goFrom[1]}`;
+        let goTo = `${Math.max(1000, window.innerWidth+getRand(50,150)).toString()} ${goFrom[1]}`;
         let newObject = JSON.parse(JSON.stringify(img)); //propagate the same properties but change a few
         newObject.fromPos = from; newObject.toPos = goTo; newObject.text = `
             <image width="${img.svgObj.width}" height="${img.svgObj.height}" id="${img.id}-windy"
@@ -220,10 +220,10 @@ function windyMosaicPieces() {
     if(windyParticleEffect === true) {
         // Register a resize handler that will run the effect only when there's more than 500ms between
         //   passed window resize events.
-        window.addEventListener('resize', () => {
+        /*window.addEventListener('resize', () => {
             window.clearTimeout(particleEffectTimeoutId);
             particleEffectTimeoutId = window.setTimeout(()=>{doWindyParticleEffect();},500);
-        });
+        });*/
         // Initial call.
         doWindyParticleEffect();
     }
@@ -234,16 +234,16 @@ function createWindySounds() {
     let newAudio = document.createElement('audio');
     newAudio.autoplay = true; newAudio.controls = true;
     newAudio.muted = false; newAudio.loop = true;
-    newAudio.volume = 0.2; newAudio.id = 'windy-sound-effect';
+    newAudio.volume = 0.0; newAudio.id = 'windy-sound-effect';
     newAudio.style.display = 'none';
     let audioSrc = document.createElement('source');
     audioSrc.src = `${windySoundFile}`;
     newAudio.appendChild(audioSrc);
-    newAudio.addEventListener("onplay", async (evnt) => {
+    newAudio.addEventListener("play", async (evnt) => {
         function sleep(ms) {return new Promise(resolve => setTimeout(resolve, ms));}
         let y=document.getElementById('windy-sound-effect'); y.play(); y.muted=false;
-        for(let i=0.2;i<1.0;i+=0.02){y.volume=i;await sleep(30);}
-        evnt.target.removeEventListener("onplay");
+        for(let i=0.0;i<0.64;i+=0.02){y.volume=i;await sleep(180);}
+        evnt.target.removeEventListener("play", this);
     }); //audio fade-in effect
     // Add the element onto the document and use a really cheap tactic to start auto-play.
     //   In order for this to work, you have to bait the visitor to click the document at least once,
@@ -257,9 +257,9 @@ function createWindySounds() {
 // Loop to add particles in the same (general) direction as the mosaic wind.
 function doWindyParticleEffect() {
     // Remove the element (wrapper div) if it's already set up (in the event of a resize).
-    if(document.getElementById('windy-particle-svg-wrapper') !== null) {
+    /*if(document.getElementById('windy-particle-svg-wrapper') !== null) {
         document.getElementById('windy-particle-svg-wrapper').remove();
-    }
+    }*/
     let baseDIV = document.createElement('div'); baseDIV.id = 'windy-particle-svg-wrapper';
     baseDIV.style.position = 'fixed'; baseDIV.style.top = '0'; baseDIV.style.left = '0';
     baseDIV.style.zIndex = '-1000'; baseDIV.style.width = '100%'; baseDIV.style.height = '100%';
@@ -315,6 +315,13 @@ function doWindyParticleEffect() {
     // Create the elements.
     document.getElementsByTagName('body')[0].appendChild(baseDIV);
     baseDIV.appendChild(baseSVG);
+    // Correcting a "freeze" issue in some browsers that causes the SVG of particles not to be rendered.
+    //   Updating the DIV's inner HTML content should force any browser to redraw the SVG.
+    baseDIV.innerHTML += ' ';
+    // window.setTimeout(()=>{
+        // let t = document.createElement('p'); t.style.display = 'block';
+        // document.getElementById(baseDIV.id).appendChild('p'); t.style.display = 'none';
+    // }, 1000);
 }
 
 
@@ -356,7 +363,24 @@ window.addEventListener('resize', () => {
                 t[x].setAttributeNS(null, 'to',
                     `${Math.max(1000, window.innerWidth+getRand(50,150)).toString()} ` +
                     `${t[x].getAttribute('to').split(' ')[1]}`);
-            }            
+            } else if(windEnabled === true && t[x].parentElement.parentElement.id === 'windy-particle-svg') {
+                // Set the particle's properties to expand or shrink its bounds to just outside the window.
+                //   This method doesn't RESPAWN the circle, rather it moves its targets to fit the window.
+                let currFrom = t[x].getAttribute('from').split(' ');
+                let currTo   = t[x].getAttribute('to').split(' ');
+                let newFromX, newToX, newFromY, newToY;
+                // if(parseInt(currFrom[0]) > 0) {
+                    newFromX = getRand(-100, -20);
+                    newToX = window.innerWidth + getRand(20,80);
+                // } else { newFromX = currFrom[0]; newToX = currTo[0]; }
+                // if(parseInt(currFrom[1]) > window.innerHeight) {
+                    newFromY = getRand(-20, window.innerHeight+20);
+                    newToY = newFromY + getRand(-50, 50);
+                // } else { newFromY = currFrom[1]; newToY = currTo[1]; }
+                // Finally, set the object's new attributes.
+                t[x].setAttributeNS(null, 'from', `${newFromX} ${newFromY}`);
+                t[x].setAttributeNS(null, 'to', `${newToX} ${newToY}`);
+            }
         }
     }, 500);
 });

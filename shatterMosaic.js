@@ -394,6 +394,15 @@ function pageResizeEventHandler() {
             windyParticleSVG.setAttributeNS(null, 'viewBox',
                 `0 0 ${window.innerWidth} ${window.innerHeight}`);
         }
+        // However, on landscape-style mobile clients, I noticed that expanding the viewBox of the SVG
+        //   inversely-proportional to the window height BELOW 800px seemed to be a nice effect.
+        let mosaicSVG = document.getElementById(mosaic.svgId);
+        if(mosaicSVG !== null) {
+            let newHeight = (window.innerHeight < 800)
+                ? 800 + (800 - window.innerHeight) : mosaic.originalDimensions.height;
+            mosaicSVG.setAttributeNS(null, 'viewBox',
+                `0 0 ${mosaic.originalDimensions.width} ${newHeight}`)
+        }
         // Use the globally-set variable to re-render the current SVG contents.
         let t = document.getElementsByTagName('animateTransform');
         for(let x = 0; x < t.length; x++) {

@@ -22,9 +22,13 @@ var delayBeforeWindMs = 4000;
 var windDirection = 'right';
 var windySoundEffect = true; var windySoundFile = 'desertwinds.mp3'
 var windyParticleEffect = true;
+var windyParticleDensity = [140, 180];
 var windyParticleColor = "#aa6600";
+var particleEffectTimeoutId;
 
 // GLOBAL PARAMETERS (do not modify).
+// Function to get a random value within the given min/max range.
+function getRand(min,max){return (Math.random()*(max-min))+min;}
 // Which element to insert the animation into, in the parent HTML window.
 var targetInsertElement = "mosaic-svg-container";
 // The content inside of the SVG tag.
@@ -38,6 +42,7 @@ var referenceX = (CANVAS_WIDTH - ORIGINAL_WIDTH) / 2;
 var referenceY = (CANVAS_HEIGHT - ORIGINAL_HEIGHT) / 2;
 var maxDuration = 0, maxDurationIndex = 0;
 var originalPoints = [];
+var animationInFinalState = false;
 
 
 
@@ -111,7 +116,8 @@ function initialSetup() {
              width="${svg[objectId].width}" height="${svg[objectId].height}" id="${objectId}">
                 <animateTransform type="translate" from="${from}" key="${objectId}-animate"
                  to="${goToPosition}" dur="${duration.toString()}s" repeatCount="1" fill="freeze"
-                 attributeType="XML" attributeName="transform" id="${objectId}-transform" begin="0s"
+                 attributeType="XML" attributeName="transform" id="${objectId}-transform" 
+                 begin="${((loadedTime - window.performance.timing.loadEventEnd)/1000).toString()}s"
                  calcMode="spline" keySplines="${splines}" keyTimes="0; 1" restart="never" />
             </image>
         `, id:objectId, svgObj:svg[objectId], spline:splines, dur:duration,
@@ -131,6 +137,8 @@ function initialSetup() {
                 (maxDuration*1000) + 250 + delayBeforeWindMs);
         }
     }
+    // Set the boolean to allow window resizes to adjust things properly.
+    animationInFinalState = true;
 }
 
 // Called shortly after the mosaic is constructed.
@@ -190,7 +198,7 @@ function windyMosaicPieces() {
         originalPoints[index] = from;
         let goFrom = from.split(' ');
         // The destination of the keyframe/spline is on the same Y-coordinate but sent all the way right on X.
-        let goTo = `${(CANVAS_WIDTH + (Math.random() * 200) + 100).toString()} ${goFrom[1]}`;
+        let goTo = `${(CANVAS_WIDTH + getRand(100,200)).toString()} ${goFrom[1]}`;
         let newObject = JSON.parse(JSON.stringify(img)); //propagate the same properties but change a few
         newObject.fromPos = from; newObject.toPos = goTo; newObject.text = `
             <image width="${img.svgObj.width}" height="${img.svgObj.height}" id="${img.id}-windy"
@@ -209,7 +217,16 @@ function windyMosaicPieces() {
     redrawSvg(newRenderedSVG.map((i)=>{return i.text;}));
     // Create the dust/particle effect, if enabled.
     if(windySoundEffect === true) { createWindySounds(); }
-    if(windyParticleEffect === true) { addWindyParticleEffect(); }
+    if(windyParticleEffect === true) {
+        // Register a resize handler that will run the effect only when there's more than 500ms between
+        //   passed window resize events.
+        window.addEventListener('resize', () => {
+            window.clearTimeout(particleEffectTimeoutId);
+            particleEffectTimeoutId = window.setTimeout(()=>{doWindyParticleEffect();},500);
+        });
+        // Initial call.
+        doWindyParticleEffect();
+    }
 }
 // Enables playing a specified background soundtrack, which will only work if the user first interacts
 //   with the page somehow.
@@ -237,9 +254,67 @@ function createWindySounds() {
         audio.play();
     });
 }
-// Self-propagating loop to add particles in the same (general) direction as the mosaic wind.
-function addWindyParticleEffect() {
-    let baseSVG = null;
+// Loop to add particles in the same (general) direction as the mosaic wind.
+function doWindyParticleEffect() {
+    // Remove the element (wrapper div) if it's already set up (in the event of a resize).
+    if(document.getElementById('windy-particle-svg-wrapper') !== null) {
+        document.getElementById('windy-particle-svg-wrapper').remove();
+    }
+    let baseDIV = document.createElement('div'); baseDIV.id = 'windy-particle-svg-wrapper';
+    baseDIV.style.position = 'fixed'; baseDIV.style.top = '0'; baseDIV.style.left = '0';
+    baseDIV.style.zIndex = '-1000'; baseDIV.style.width = '100%'; baseDIV.style.height = '100%';
+    let baseSVG = document.createElement('svg'); baseSVG.id = 'windy-particle-svg';
+    baseSVG.style.width = '100%'; baseSVG.style.height = '100%'; baseSVG.style.margin = '0 auto';
+    baseSVG.style.padding = '0'; baseSVG.style.display = 'block';
+    baseSVG.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    baseSVG.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    baseSVG.setAttributeNS(null, 'viewBox', `0 0 ${window.innerWidth} ${window.innerHeight}`);
+    baseSVG.setAttributeNS(null, 'preserveAspectRatio', 'xMidYMid meet');
+    baseSVG.setAttribute('title', "Windy particle effect.");
+    // Remove any old particles, as applicable.
+    let removedTags = []; let allCircles = document.getElementsByTagName('circle');
+    for(let u = 0; u < allCircles.length; u++) {
+        if(allCircles[u].parentElement.id === 'mosaic-svg-rendering') { removedTags.push(allCircles[u].id); }
+    }
+    removedTags.map((i)=>{document.getElementById(i).remove();});
+    // Schedule all new particles with randomized IDs.
+    let circles = [];
+    for(let x = 0; x < Math.floor(getRand(windyParticleDensity[0], windyParticleDensity[1])); x++) {
+        let constantHeight = getRand(-20,window.innerHeight+20); //within 20px out-of-bounds of the window
+        let heightDither = getRand(-50, 50); //+/-50 points of dithering in the destination height
+        let fromPoint = `${getRand(-(window.innerWidth/4), -(window.innerWidth/16)).toString()} `
+            + `${constantHeight.toString()}`;
+        let toPoint = `${((Math.random()*30)+window.innerWidth).toString()} `
+            + `${(constantHeight+heightDither).toString()}`;
+        let dur = (Math.random()*(introDurationRange[1]-introDurationRange[0]))
+            + introDurationRange[0] - Math.floor(Math.random()*0.550)  //<--dither
+        // Spawn the particle.
+        let newParticle = document.createElement('circle');
+        let newTransform = document.createElementNS(null, 'animateTransform');
+        newTransform.setAttributeNS(null, 'type', 'translate');
+        newTransform.setAttributeNS(null, 'from', fromPoint);
+        newTransform.setAttributeNS(null, 'to', toPoint);
+        newTransform.setAttributeNS(null, 'dur', `${dur.toString()}s`);
+        newTransform.setAttributeNS(null, 'repeatCount', 'indefinite');
+        newTransform.setAttributeNS(null, 'attributeName', 'transform');
+        newTransform.setAttributeNS(null, 'attributeType', 'XML');
+        newTransform.setAttributeNS(null, 'begin', '0s');
+        newTransform.setAttributeNS(null, 'calcMode', 'spline');
+        newTransform.setAttributeNS(null, 'keySplines', `${Math.random()}, 0, ${Math.random()}, 0`);
+        newTransform.setAttributeNS(null, 'keyTimes', '0; 1');
+        newTransform.setAttributeNS(null, 'restart', 'always');
+        newParticle.setAttributeNS(null, 'r', `${(Math.random()*(3-1)+1).toString()}`);
+        newParticle.setAttributeNS(null, 'fill', windyParticleColor);
+        newParticle.setAttributeNS(null, 'id',
+            `dust-particle-${Math.random().toString()}-${(new Date()).getTime().toString()}`);
+        // Add on the transform tag as a child to the circle, and push it onto the stack.
+        newParticle.appendChild(newTransform);
+        circles.push(newParticle);
+    }
+    circles.map((i)=>{ baseSVG.appendChild(i); });
+    // Create the elements.
+    document.getElementsByTagName('body')[0].appendChild(baseDIV);
+    baseDIV.appendChild(baseSVG);
 }
 
 
@@ -247,8 +322,8 @@ function addWindyParticleEffect() {
 function redrawSvg(innerContent) {
     document.getElementById(targetInsertElement).innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-         viewBox="0 0 ${CANVAS_WIDTH.toString()} ${CANVAS_HEIGHT.toString()}" id="particle-svg-rendering"
-         style="margin:0 auto;padding:0;display:block;width:100%;height:100%;max-height:800px;max-width:1800px;z-index:-10000;"
+         viewBox="0 0 ${CANVAS_WIDTH.toString()} ${CANVAS_HEIGHT.toString()}" id="mosaic-svg-rendering"
+         style="margin:0 auto;padding:0;display:block;width:100%;height:100%;max-height:800px;"
          preserveAspectRatio="xMidYMid meet" title="Shatter mosaic art.">
             ${innerContent}
         </svg>
@@ -265,6 +340,23 @@ function redrawSvg(innerContent) {
 var loadedTime = (new Date()).getTime();
 // alert("BEGIN: " + ((loadedTime - window.performance.timing.loadEventEnd)/1000).toString()+"s");
 //// Set up the SVG properties.
+console.log("Loading SVG...");
 initialSetup();
 //// Initial rendering.
 redrawSvg(renderedSVG.map((i)=>{return i.text;}));
+//// Register the script-wide resize handler.
+var globalResizeTimeoutId;
+window.addEventListener('resize', () => {
+    window.clearTimeout(globalResizeTimeoutId);
+    globalResizeTimeoutId = window.setTimeout(() => {
+        // Use the globally-set variable to re-render the current SVG contents.
+        let t = document.getElementsByTagName('animateTransform');
+        for(let x = 0; x < t.length; x++) {
+            if(windEnabled === true && t[x].parentElement.parentElement.id === 'mosaic-svg-rendering') {
+                t[x].setAttributeNS(null, 'to',
+                    `${Math.max(1000, window.innerWidth+getRand(50,150)).toString()} ` +
+                    `${t[x].getAttribute('to').split(' ')[1]}`);
+            }            
+        }
+    }, 500);
+});
